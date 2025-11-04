@@ -1,11 +1,12 @@
 import path from 'path';
 import dotenv from 'dotenv';
+import type { Secret, SignOptions } from 'jsonwebtoken';
 
 dotenv.config();
 
 export const PORT = Number(process.env.PORT ?? 4000);
-export const JWT_SECRET = process.env.JWT_SECRET ?? 'development-secret';
-export const TOKEN_EXPIRATION = process.env.TOKEN_EXPIRATION ?? '8h';
+export const JWT_SECRET: Secret = process.env.JWT_SECRET ?? 'development-secret';
+export const TOKEN_EXPIRATION = (process.env.TOKEN_EXPIRATION ?? '8h') as SignOptions['expiresIn'];
 export const SCHEMA_PATH = process.env.SCHEMA_PATH ?? path.resolve(__dirname, '..', '..', '..', 'sql', 'schema.sql');
 
 export const DB_HOST = process.env.DB_HOST ?? 'localhost';
