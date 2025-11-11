@@ -141,7 +141,13 @@ router.post('/', async (req: Request, res: Response) => {
       return;
     }
   } catch (error) {
-    res.status(500).json({ message: `Error de validación: ${error.message}` });
+    // --- INICIO DE LA CORRECCIÓN (error 'unknown') ---
+    let message = 'Error de validación desconocido';
+    if (error instanceof Error) {
+      message = `Error de validación: ${error.message}`;
+    }
+    res.status(500).json({ message });
+    // --- FIN DE LA CORRECCIÓN ---
     return;
   }
   // ---
@@ -223,8 +229,6 @@ router.put('/:id', async (req: Request<{ id: string }>, res: Response) => {
     maxStudents?: number;
   };
 
-  // El frontend (Tkinter) envía *todos* los campos, así que esta validación
-  // está bien, pero la tuya original era incompleta.
   if (!name || !careerId || !subjectId || !teacherId || !classroomId || !scheduleId || !semester || !maxStudents) {
     res.status(400).json({ message: 'Todos los campos son requeridos para actualizar' });
     return;
@@ -261,7 +265,13 @@ router.put('/:id', async (req: Request<{ id: string }>, res: Response) => {
       return;
     }
   } catch (error) {
-    res.status(500).json({ message: `Error de validación: ${error.message}` });
+    // --- INICIO DE LA CORRECCIÓN (error 'unknown') ---
+    let message = 'Error de validación desconocido';
+    if (error instanceof Error) {
+      message = `Error de validación: ${error.message}`;
+    }
+    res.status(500).json({ message });
+    // --- FIN DE LA CORRECCIÓN ---
     return;
   }
   // ---
@@ -269,9 +279,6 @@ router.put('/:id', async (req: Request<{ id: string }>, res: Response) => {
   // ---
 
 
-  // Tu lógica de actualización original tenía un error.
-  // Asumía que los campos podían venir vacíos, pero el frontend
-  // los manda todos. Esta es la forma correcta de actualizar.
   const params: unknown[] = [
     name,
     careerId,
@@ -294,7 +301,7 @@ router.put('/:id', async (req: Request<{ id: string }>, res: Response) => {
   );
 
   if (result.affectedRows === 0) {
-    res.status(404).json({ message: 'Grupo no encontrado' });
+    res.status(44).json({ message: 'Grupo no encontrado' });
     return;
   }
 
