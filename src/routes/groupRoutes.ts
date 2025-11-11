@@ -208,10 +208,17 @@ router.post('/', authorize('ADMIN'), async (req: Request, res: Response) => {
          JOIN groups g ON g.id = gs.group_id
          WHERE g.subject_id = ?
        ) AS assigned ON assigned.student_id = ss.student_id
+       LEFT JOIN (
+         SELECT gs.student_id
+         FROM group_students gs
+         JOIN groups g ON g.id = gs.group_id
+         WHERE g.schedule_id = ?
+       ) AS schedule_conflict ON schedule_conflict.student_id = ss.student_id
        WHERE ss.subject_id = ?
          AND assigned.student_id IS NULL
+         AND schedule_conflict.student_id IS NULL
        ORDER BY ss.registered_at`,
-      [subjectId, subjectId]
+      [subjectId, scheduleId, subjectId]
     );
 
     for (const student of students.slice(0, maxStudents)) {
@@ -296,6 +303,29 @@ router.put('/:id', authorize('ADMIN'), async (req: Request<{ id: string }>, res:
     );
     if (classroomConflict) {
       res.status(409).json({ message: `Conflicto de Salón: ${classroomConflict.name} (${classroomConflict.building}) ya está ocupado en ese horario.` });
+      return;
+    }
+
+    const studentScheduleConflict = await queryOne<{
+      studentId: number;
+      studentName: string;
+      conflictingGroup: string;
+    }>(
+      `SELECT gs.student_id AS studentId, s.name AS studentName, g2.name AS conflictingGroup
+       FROM group_students gs
+       JOIN students s ON s.id = gs.student_id
+       JOIN group_students gs2 ON gs2.student_id = gs.student_id AND gs2.group_id <> gs.group_id
+       JOIN groups g2 ON g2.id = gs2.group_id
+       WHERE gs.group_id = ?
+         AND g2.schedule_id = ?
+       LIMIT 1`,
+      [id, scheduleId]
+    );
+
+    if (studentScheduleConflict) {
+      res.status(409).json({
+        message: `Conflicto de alumno: ${studentScheduleConflict.studentName} ya está inscrito en el grupo '${studentScheduleConflict.conflictingGroup}' con el mismo horario.`
+      });
       return;
     }
   } catch (error) {
