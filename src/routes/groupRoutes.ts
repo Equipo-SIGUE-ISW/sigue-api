@@ -9,11 +9,11 @@ import {
 } from '../database/db';
 import { authenticate } from '../middleware/auth';
 import { authorize } from '../middleware/authorize';
+import { TokenPayload } from '../types';
 
 const router = Router();
 
-// Este permiso se queda, ya que el Admin es el único que gestiona grupos
-router.use(authenticate, authorize('ADMIN'));
+router.use(authenticate);
 
 const mapGroup = (row: any) => ({
   id: row.id,
@@ -35,8 +35,23 @@ const mapGroup = (row: any) => ({
   updatedAt: row.updated_at
 });
 
-// GET / - (SIN CAMBIOS)
-router.get('/', async (_req: Request, res: Response) => {
+// GET / - listado general (admin) o del maestro autenticado
+router.get('/', authorize('ADMIN', 'TEACHER'), async (req: Request, res: Response) => {
+  const requester = req.user as TokenPayload;
+
+  let teacherId: number | null = null;
+  if (requester.role === 'TEACHER') {
+    const teacher = await queryOne<{ id: number }>('SELECT id FROM teachers WHERE user_id = ?', [requester.id]);
+    teacherId = teacher?.id ?? null;
+    if (!teacherId) {
+      res.json([]);
+      return;
+    }
+  }
+
+  const whereClause = teacherId ? 'WHERE g.teacher_id = ?' : '';
+  const params = teacherId ? [teacherId] : [];
+
   const groups = await query(
     `SELECT g.*, c.name AS career_name, sub.name AS subject_name,
             t.name AS teacher_name, cl.name AS classroom_name,
@@ -47,18 +62,32 @@ router.get('/', async (_req: Request, res: Response) => {
        LEFT JOIN teachers t ON t.id = g.teacher_id
        LEFT JOIN classrooms cl ON cl.id = g.classroom_id
        LEFT JOIN schedules sc ON sc.id = g.schedule_id
-       ORDER BY g.id DESC`
+       ${whereClause}
+       ORDER BY g.id DESC`,
+    params
   );
   res.json(groups.map(mapGroup));
 });
 
-// GET /:id - (SIN CAMBIOS)
-router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
+// GET /:id - detalle de grupo (admin) o del maestro autenticado
+router.get('/:id', authorize('ADMIN', 'TEACHER'), async (req: Request<{ id: string }>, res: Response) => {
   const id = Number(req.params.id);
   if (Number.isNaN(id)) {
     res.status(400).json({ message: 'ID inválido' });
     return;
   }
+  const requester = req.user as TokenPayload;
+
+  let teacherId: number | null = null;
+  if (requester.role === 'TEACHER') {
+    const teacher = await queryOne<{ id: number }>('SELECT id FROM teachers WHERE user_id = ?', [requester.id]);
+    teacherId = teacher?.id ?? null;
+    if (!teacherId) {
+      res.status(403).json({ message: 'No cuenta con permisos suficientes' });
+      return;
+    }
+  }
+
   const group = await queryOne(
     `SELECT g.*, c.name AS career_name, sub.name AS subject_name,
             t.name AS teacher_name, cl.name AS classroom_name,
@@ -78,6 +107,11 @@ router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
     return;
   }
 
+  if (teacherId && group.teacher_id !== teacherId) {
+    res.status(403).json({ message: 'No cuenta con permisos suficientes' });
+    return;
+  }
+
   const students = await query(
     `SELECT gs.student_id AS studentId, s.name, s.status,
             u.email
@@ -93,7 +127,7 @@ router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
 });
 
 // POST / - (MODIFICADO CON VALIDACIÓN)
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', authorize('ADMIN'), async (req: Request, res: Response) => {
   const { name, careerId, subjectId, teacherId, classroomId, scheduleId, semester, maxStudents } = req.body as {
     name?: string;
     careerId?: number;
@@ -211,7 +245,7 @@ router.post('/', async (req: Request, res: Response) => {
 });
 
 // PUT /:id - (MODIFICADO CON VALIDACIÓN)
-router.put('/:id', async (req: Request<{ id: string }>, res: Response) => {
+router.put('/:id', authorize('ADMIN'), async (req: Request<{ id: string }>, res: Response) => {
   const id = Number(req.params.id);
   if (Number.isNaN(id)) {
     res.status(400).json({ message: 'ID inválido' });
@@ -343,7 +377,7 @@ router.put('/:id', async (req: Request<{ id: string }>, res: Response) => {
 });
 
 // DELETE /:id - (SIN CAMBIOS)
-router.delete('/:id', async (req: Request<{ id: string }>, res: Response) => {
+router.delete('/:id', authorize('ADMIN'), async (req: Request<{ id: string }>, res: Response) => {
   const id = Number(req.params.id);
   if (Number.isNaN(id)) {
     res.status(400).json({ message: 'ID inválido' });

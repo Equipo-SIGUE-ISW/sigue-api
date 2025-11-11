@@ -2,6 +2,7 @@ import { Request, Response, Router } from 'express';
 import { execute, query, queryOne } from '../database/db';
 import { authenticate } from '../middleware/auth';
 import { authorize } from '../middleware/authorize';
+import { TokenPayload } from '../types';
 
 const router = Router();
 
@@ -17,9 +18,42 @@ const router = Router();
 router.get(
   '/',
   authenticate,
-  authorize('ADMIN', 'STUDENT'), // <--- CAMBIO CLAVE
+  authorize('ADMIN', 'STUDENT', 'TEACHER'), // <--- Permite lectura a maestros también
   async (req: Request, res: Response) => {
     const { careerId } = req.query as { careerId?: string };
+    const requester = req.user as TokenPayload;
+
+    if (requester.role === 'TEACHER') {
+      const params: unknown[] = [requester.id];
+      let careerFilter = '';
+      if (careerId) {
+        params.push(Number(careerId));
+        careerFilter = 'AND s.career_id = ?';
+      }
+
+      const subjects = await query<{
+        id: number;
+        name: string;
+        credits: number;
+        semester: number;
+        careerId: number | null;
+        careerName: string | null;
+      }>(
+        `SELECT s.id, s.name, s.credits, s.semester, s.career_id AS careerId,
+                c.name AS careerName
+         FROM teacher_subjects ts
+         JOIN teachers t ON t.id = ts.teacher_id
+         JOIN subjects s ON s.id = ts.subject_id
+         LEFT JOIN careers c ON c.id = s.career_id
+         WHERE t.user_id = ?
+         ${careerFilter}
+         ORDER BY s.semester, s.name`,
+        params
+      );
+      res.json(subjects);
+      return;
+    }
+
     const params: unknown[] = [];
     const where = careerId ? 'WHERE s.career_id = ?' : '';
     if (careerId) {
@@ -50,13 +84,43 @@ router.get(
 router.get(
   '/:id',
   authenticate,
-  authorize('ADMIN', 'STUDENT'), // <--- CAMBIO CLAVE
+  authorize('ADMIN', 'STUDENT', 'TEACHER'), // <--- Permite lectura a maestros también
   async (req: Request<{ id: string }>, res: Response) => {
     const id = Number(req.params.id);
     if (Number.isNaN(id)) {
       res.status(400).json({ message: 'ID inválido' });
       return;
     }
+
+    const requester = req.user as TokenPayload;
+    if (requester.role === 'TEACHER') {
+      const subject = await queryOne<{
+        id: number;
+        name: string;
+        credits: number;
+        semester: number;
+        careerId: number | null;
+        careerName: string | null;
+      }>(
+        `SELECT s.id, s.name, s.credits, s.semester, s.career_id AS careerId,
+                c.name AS careerName
+         FROM teacher_subjects ts
+         JOIN teachers t ON t.id = ts.teacher_id
+         JOIN subjects s ON s.id = ts.subject_id
+         LEFT JOIN careers c ON c.id = s.career_id
+         WHERE s.id = ? AND t.user_id = ?`,
+        [id, requester.id]
+      );
+
+      if (!subject) {
+        res.status(403).json({ message: 'No cuenta con permisos suficientes' });
+        return;
+      }
+
+      res.json(subject);
+      return;
+    }
+
     const subject = await queryOne<{
       id: number;
       name: string;

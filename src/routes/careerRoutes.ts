@@ -2,52 +2,100 @@ import { Request, Response, Router } from 'express';
 import { execute, query, queryOne } from '../database/db';
 import { authenticate } from '../middleware/auth';
 import { authorize } from '../middleware/authorize';
+import { TokenPayload } from '../types';
 
 const router = Router();
 
-router.use(authenticate, authorize('ADMIN'));
+router.use(authenticate);
 
-router.get('/', async (_req: Request, res: Response) => {
-  const careers = await query<{
-    id: number;
-    name: string;
-    semesters: number;
-    createdAt: Date;
-    updatedAt: Date;
-  }>(
-    `SELECT id, name, semesters, created_at AS createdAt, updated_at AS updatedAt
-     FROM careers ORDER BY name`
-  );
-  res.json(careers);
-});
+router.get(
+  '/',
+  authorize('ADMIN', 'TEACHER'),
+  async (req: Request, res: Response) => {
+    const requester = req.user as TokenPayload;
 
-router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
-  const id = Number(req.params.id);
-  if (Number.isNaN(id)) {
-    res.status(400).json({ message: 'ID inválido' });
-    return;
+    if (requester.role === 'TEACHER') {
+      const careers = await query<{
+        id: number;
+        name: string;
+        semesters: number;
+        createdAt: Date;
+        updatedAt: Date;
+      }>(
+        `SELECT c.id, c.name, c.semesters, c.created_at AS createdAt, c.updated_at AS updatedAt
+         FROM careers c
+         JOIN teacher_careers tc ON tc.career_id = c.id
+         JOIN teachers t ON t.id = tc.teacher_id
+         WHERE t.user_id = ?
+         ORDER BY c.name`,
+        [requester.id]
+      );
+      res.json(careers);
+      return;
+    }
+
+    const careers = await query<{
+      id: number;
+      name: string;
+      semesters: number;
+      createdAt: Date;
+      updatedAt: Date;
+    }>(
+      `SELECT id, name, semesters, created_at AS createdAt, updated_at AS updatedAt
+       FROM careers ORDER BY name`
+    );
+    res.json(careers);
   }
-  const career = await queryOne<{
-    id: number;
-    name: string;
-    semesters: number;
-    createdAt: Date;
-    updatedAt: Date;
-  }>(
-    `SELECT id, name, semesters, created_at AS createdAt, updated_at AS updatedAt
-     FROM careers WHERE id = ?`,
-    [id]
-  );
+);
 
-  if (!career) {
-    res.status(404).json({ message: 'Carrera no encontrada' });
-    return;
+router.get(
+  '/:id',
+  authorize('ADMIN', 'TEACHER'),
+  async (req: Request<{ id: string }>, res: Response) => {
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) {
+      res.status(400).json({ message: 'ID inválido' });
+      return;
+    }
+
+    const requester = req.user as TokenPayload;
+    if (requester.role === 'TEACHER') {
+      const hasAccess = await queryOne<{ careerId: number }>(
+        `SELECT tc.career_id AS careerId
+         FROM teacher_careers tc
+         JOIN teachers t ON t.id = tc.teacher_id
+         WHERE t.user_id = ? AND tc.career_id = ?`,
+        [requester.id, id]
+      );
+
+      if (!hasAccess) {
+        res.status(403).json({ message: 'No cuenta con permisos suficientes' });
+        return;
+      }
+    }
+
+    const career = await queryOne<{
+      id: number;
+      name: string;
+      semesters: number;
+      createdAt: Date;
+      updatedAt: Date;
+    }>(
+      `SELECT id, name, semesters, created_at AS createdAt, updated_at AS updatedAt
+       FROM careers WHERE id = ?`,
+      [id]
+    );
+
+    if (!career) {
+      res.status(404).json({ message: 'Carrera no encontrada' });
+      return;
+    }
+
+    res.json(career);
   }
+);
 
-  res.json(career);
-});
-
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', authorize('ADMIN'), async (req: Request, res: Response) => {
   const { name, semesters } = req.body as { name?: string; semesters?: number };
   if (!name || !semesters || semesters <= 0) {
     res.status(400).json({ message: 'name y semesters son requeridos' });
@@ -81,7 +129,7 @@ router.post('/', async (req: Request, res: Response) => {
   res.status(201).json(career);
 });
 
-router.put('/:id', async (req: Request<{ id: string }>, res: Response) => {
+router.put('/:id', authorize('ADMIN'), async (req: Request<{ id: string }>, res: Response) => {
   const id = Number(req.params.id);
   if (Number.isNaN(id)) {
     res.status(400).json({ message: 'ID inválido' });
@@ -141,7 +189,7 @@ router.put('/:id', async (req: Request<{ id: string }>, res: Response) => {
   res.json(career);
 });
 
-router.delete('/:id', async (req: Request<{ id: string }>, res: Response) => {
+router.delete('/:id', authorize('ADMIN'), async (req: Request<{ id: string }>, res: Response) => {
   const id = Number(req.params.id);
   if (Number.isNaN(id)) {
     res.status(400).json({ message: 'ID inválido' });
