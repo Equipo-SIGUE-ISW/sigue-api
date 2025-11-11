@@ -5,210 +5,254 @@ import { authorize } from '../middleware/authorize';
 
 const router = Router();
 
-router.use(authenticate, authorize('ADMIN'));
+// --- LÍNEA PROBLEMÁTICA ELIMINADA ---
+// router.use(authenticate, authorize('ADMIN'));
 
-router.get('/', async (req: Request, res: Response) => {
-  const { careerId } = req.query as { careerId?: string };
-  const params: unknown[] = [];
-  const where = careerId ? 'WHERE s.career_id = ?' : '';
-  if (careerId) {
-    params.push(Number(careerId));
-  }
-  const subjects = await query<{
-    id: number;
-    name: string;
-    credits: number;
-    semester: number;
-    careerId: number;
-    careerName: string | null;
-  }>(
-    `SELECT s.id, s.name, s.credits, s.semester, s.career_id AS careerId,
+//
+// INICIO DE RUTAS CON PERMISOS INDIVIDUALES
+//
+
+// GET / (Ver todas las materias)
+// PERMITIDO PARA: ADMIN (para gestionar) y STUDENT (para inscribir)
+router.get(
+  '/',
+  authenticate,
+  authorize('ADMIN', 'STUDENT'), // <--- CAMBIO CLAVE
+  async (req: Request, res: Response) => {
+    const { careerId } = req.query as { careerId?: string };
+    const params: unknown[] = [];
+    const where = careerId ? 'WHERE s.career_id = ?' : '';
+    if (careerId) {
+      params.push(Number(careerId));
+    }
+    const subjects = await query<{
+      id: number;
+      name: string;
+      credits: number;
+      semester: number;
+      careerId: number;
+      careerName: string | null;
+    }>(
+      `SELECT s.id, s.name, s.credits, s.semester, s.career_id AS careerId,
             c.name AS careerName
-     FROM subjects s
-     LEFT JOIN careers c ON c.id = s.career_id
-     ${where}
-     ORDER BY s.semester, s.name`,
-    params
-  );
-  res.json(subjects);
-});
-
-router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
-  const id = Number(req.params.id);
-  if (Number.isNaN(id)) {
-    res.status(400).json({ message: 'ID inválido' });
-    return;
-  }
-  const subject = await queryOne<{
-    id: number;
-    name: string;
-    credits: number;
-    semester: number;
-    careerId: number;
-    careerName: string | null;
-  }>(
-    `SELECT s.id, s.name, s.credits, s.semester, s.career_id AS careerId,
-            c.name AS careerName
-     FROM subjects s
-     LEFT JOIN careers c ON c.id = s.career_id
-     WHERE s.id = ?`,
-    [id]
-  );
-  if (!subject) {
-    res.status(404).json({ message: 'Materia no encontrada' });
-    return;
-  }
-  res.json(subject);
-});
-
-router.post('/', async (req: Request, res: Response) => {
-  const { name, credits, semester, careerId } = req.body as {
-    name?: string;
-    credits?: number;
-    semester?: number;
-    careerId?: number;
-  };
-
-  if (!name || credits === undefined || semester === undefined || !careerId) {
-    res.status(400).json({ message: 'Todos los campos son requeridos' });
-    return;
-  }
-
-  const duplicate = await queryOne<{ id: number }>('SELECT id FROM subjects WHERE name = ? AND career_id = ?', [name, careerId]);
-  if (duplicate) {
-    res.status(409).json({ message: 'Ya existe la materia en la carrera seleccionada' });
-    return;
-  }
-
-  const result = await execute(
-    `INSERT INTO subjects (name, credits, semester, career_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, NOW(), NOW())`,
-    [name, credits, semester, careerId]
-  );
-
-  const subject = await queryOne<{
-    id: number;
-    name: string;
-    credits: number;
-    semester: number;
-    careerId: number;
-    careerName: string | null;
-  }>(
-    `SELECT s.id, s.name, s.credits, s.semester, s.career_id AS careerId,
-            c.name AS careerName
-     FROM subjects s
-     LEFT JOIN careers c ON c.id = s.career_id
-     WHERE s.id = ?`,
-    [result.insertId]
-  );
-
-  res.status(201).json(subject);
-});
-
-router.put('/:id', async (req: Request<{ id: string }>, res: Response) => {
-  const id = Number(req.params.id);
-  if (Number.isNaN(id)) {
-    res.status(400).json({ message: 'ID inválido' });
-    return;
-  }
-
-  const { name, credits, semester, careerId } = req.body as {
-    name?: string;
-    credits?: number;
-    semester?: number;
-    careerId?: number;
-  };
-
-  if (name === undefined && credits === undefined && semester === undefined && careerId === undefined) {
-    res.status(400).json({ message: 'No hay campos para actualizar' });
-    return;
-  }
-
-  if (name && careerId) {
-    const duplicate = await queryOne<{ id: number }>(
-      'SELECT id FROM subjects WHERE name = ? AND career_id = ? AND id <> ?',
-      [name, careerId, id]
+       FROM subjects s
+       LEFT JOIN careers c ON c.id = s.career_id
+       ${where}
+       ORDER BY s.semester, s.name`,
+      params
     );
+    res.json(subjects);
+  }
+);
+
+// GET /:id (Ver una materia)
+// PERMITIDO PARA: ADMIN (para gestionar) y STUDENT (para inscribir)
+router.get(
+  '/:id',
+  authenticate,
+  authorize('ADMIN', 'STUDENT'), // <--- CAMBIO CLAVE
+  async (req: Request<{ id: string }>, res: Response) => {
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) {
+      res.status(400).json({ message: 'ID inválido' });
+      return;
+    }
+    const subject = await queryOne<{
+      id: number;
+      name: string;
+      credits: number;
+      semester: number;
+      careerId: number;
+      careerName: string | null;
+    }>(
+      `SELECT s.id, s.name, s.credits, s.semester, s.career_id AS careerId,
+            c.name AS careerName
+       FROM subjects s
+       LEFT JOIN careers c ON c.id = s.career_id
+       WHERE s.id = ?`,
+      [id]
+    );
+    if (!subject) {
+      res.status(404).json({ message: 'Materia no encontrada' });
+      return;
+    }
+    res.json(subject);
+  }
+);
+
+//
+// INICIO DE RUTAS SOLO PARA ADMIN
+//
+
+// POST / (Crear materia)
+// PERMITIDO PARA: Solo ADMIN
+router.post(
+  '/',
+  authenticate,
+  authorize('ADMIN'), // <--- Se mantiene solo ADMIN
+  async (req: Request, res: Response) => {
+    const { name, credits, semester, careerId } = req.body as {
+      name?: string;
+      credits?: number;
+      semester?: number;
+      careerId?: number;
+    };
+
+    if (!name || credits === undefined || semester === undefined || !careerId) {
+      res.status(400).json({ message: 'Todos los campos son requeridos' });
+      return;
+    }
+
+    const duplicate = await queryOne<{ id: number }>('SELECT id FROM subjects WHERE name = ? AND career_id = ?', [name, careerId]);
     if (duplicate) {
       res.status(409).json({ message: 'Ya existe la materia en la carrera seleccionada' });
       return;
     }
-  }
 
-  const updates: string[] = [];
-  const params: unknown[] = [];
-  if (name) {
-    updates.push('name = ?');
-    params.push(name);
-  }
-  if (credits !== undefined) {
-    updates.push('credits = ?');
-    params.push(credits);
-  }
-  if (semester !== undefined) {
-    updates.push('semester = ?');
-    params.push(semester);
-  }
-  if (careerId !== undefined) {
-    updates.push('career_id = ?');
-    params.push(careerId);
-  }
-  updates.push('updated_at = NOW()');
-  params.push(id);
+    const result = await execute(
+      `INSERT INTO subjects (name, credits, semester, career_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, NOW(), NOW())`,
+      [name, credits, semester, careerId]
+    );
 
-  const result = await execute(`UPDATE subjects SET ${updates.join(', ')} WHERE id = ?`, params);
-  if (result.affectedRows === 0) {
-    res.status(404).json({ message: 'Materia no encontrada' });
-    return;
-  }
-
-  const subject = await queryOne<{
-    id: number;
-    name: string;
-    credits: number;
-    semester: number;
-    careerId: number;
-    careerName: string | null;
-  }>(
-    `SELECT s.id, s.name, s.credits, s.semester, s.career_id AS careerId,
+    const subject = await queryOne<{
+      id: number;
+      name: string;
+      credits: number;
+      semester: number;
+      careerId: number;
+      careerName: string | null;
+    }>(
+      `SELECT s.id, s.name, s.credits, s.semester, s.career_id AS careerId,
             c.name AS careerName
-     FROM subjects s
-     LEFT JOIN careers c ON c.id = s.career_id
-     WHERE s.id = ?`,
-    [id]
-  );
+       FROM subjects s
+       LEFT JOIN careers c ON c.id = s.career_id
+       WHERE s.id = ?`,
+      [result.insertId]
+    );
 
-  res.json(subject);
-});
-
-router.delete('/:id', async (req: Request<{ id: string }>, res: Response) => {
-  const id = Number(req.params.id);
-  if (Number.isNaN(id)) {
-    res.status(400).json({ message: 'ID inválido' });
-    return;
+    res.status(201).json(subject);
   }
+);
 
-  const dependencies = await query<{ tableName: string }>(
-    `SELECT 'student_subjects' AS tableName FROM student_subjects WHERE subject_id = ?
-     UNION ALL
-     SELECT 'teacher_subjects' AS tableName FROM teacher_subjects WHERE subject_id = ?
-     UNION ALL
-     SELECT 'groups' AS tableName FROM groups WHERE subject_id = ?`,
-    [id, id, id]
-  );
+// PUT /:id (Actualizar materia)
+// PERMITIDO PARA: Solo ADMIN
+router.put(
+  '/:id',
+  authenticate,
+  authorize('ADMIN'), // <--- Se mantiene solo ADMIN
+  async (req: Request<{ id: string }>, res: Response) => {
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) {
+      res.status(400).json({ message: 'ID inválido' });
+      return;
+    }
 
-  if (dependencies.length) {
-    res.status(409).json({ message: 'No se puede eliminar la materia porque tiene datos asociados' });
-    return;
+    const { name, credits, semester, careerId } = req.body as {
+      name?: string;
+      credits?: number;
+      semester?: number;
+      careerId?: number;
+    };
+
+    if (name === undefined && credits === undefined && semester === undefined && careerId === undefined) {
+      res.status(400).json({ message: 'No hay campos para actualizar' });
+      return;
+    }
+
+    if (name && careerId) {
+      const duplicate = await queryOne<{ id: number }>(
+        'SELECT id FROM subjects WHERE name = ? AND career_id = ? AND id <> ?',
+        [name, careerId, id]
+      );
+      if (duplicate) {
+        res.status(409).json({ message: 'Ya existe la materia en la carrera seleccionada' });
+        return;
+      }
+    }
+
+    const updates: string[] = [];
+    const params: unknown[] = [];
+    if (name) {
+      updates.push('name = ?');
+      params.push(name);
+    }
+    if (credits !== undefined) {
+      updates.push('credits = ?');
+      params.push(credits);
+    }
+    if (semester !== undefined) {
+      updates.push('semester = ?');
+      params.push(semester);
+    }
+    if (careerId !== undefined) {
+      updates.push('career_id = ?');
+      params.push(careerId);
+    }
+    updates.push('updated_at = NOW()');
+    params.push(id);
+
+    const result = await execute(`UPDATE subjects SET ${updates.join(', ')} WHERE id = ?`, params);
+    if (result.affectedRows === 0) {
+      res.status(404).json({ message: 'Materia no encontrada' });
+      return;
+    }
+
+    const subject = await queryOne<{
+      id: number;
+      name: string;
+      credits: number;
+      semester: number;
+      careerId: number;
+      careerName: string | null;
+    }>(
+      `SELECT s.id, s.name, s.credits, s.semester, s.career_id AS careerId,
+            c.name AS careerName
+       FROM subjects s
+       LEFT JOIN careers c ON c.id = s.career_id
+       WHERE s.id = ?`,
+      [id]
+    );
+
+    res.json(subject);
   }
+);
 
-  const result = await execute('DELETE FROM subjects WHERE id = ?', [id]);
-  if (result.affectedRows === 0) {
-    res.status(404).json({ message: 'Materia no encontrada' });
-    return;
+// DELETE /:id (Eliminar materia)
+// PERMITIDO PARA: Solo ADMIN
+router.delete(
+  '/:id',
+  authenticate,
+  authorize('ADMIN'), // <--- Se mantiene solo ADMIN
+  async (req: Request<{ id: string }>, res: Response) => {
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) {
+      res.status(400).json({ message: 'ID inválido' });
+      return;
+    }
+
+    const dependencies = await query<{ tableName: string }>(
+      `SELECT 'student_subjects' AS tableName FROM student_subjects WHERE subject_id = ?
+       UNION ALL
+       SELECT 'teacher_subjects' AS tableName FROM teacher_subjects WHERE subject_id = ?
+       UNION ALL
+       SELECT 'groups' AS tableName FROM groups WHERE subject_id = ?`,
+      [id, id, id]
+    );
+
+    if (dependencies.length) {
+      res.status(409).json({ message: 'No se puede eliminar la materia porque tiene datos asociados' });
+      return;
+    }
+
+    const result = await execute('DELETE FROM subjects WHERE id = ?', [id]);
+    if (result.affectedRows === 0) {
+      res.status(404).json({ message: 'Materia no encontrada' });
+      return;
+    }
+
+    res.status(204).send();
   }
-
-  res.status(204).send();
-});
+);
 
 export default router;
